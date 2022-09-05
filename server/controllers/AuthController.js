@@ -1,28 +1,34 @@
 import UserModel from "../models/UserModel.js";
 import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
 
 //Registering a new user
 export const RegisterUser = async (req, res) => {
-  const { userName, password, firstName, lastName } = req.body;
-
-  // const user = await UserModal.findOne({ userName });
-  // if (user) {
-  // return res.status(400).json({ message: "User already exists" });
-  // }
-
   const salt = await bcrypt.genSalt(10);
-  const hashedPassword = await bcrypt.hash(password, salt);
-
-  const newUser = new UserModel({
-    userName,
-    password: hashedPassword,
-    firstName,
-    lastName,
-  });
+  const hashedPassword = await bcrypt.hash(req.body.password, salt);
+  req.body.password = hashedPassword;
+  const newUser = new UserModel(req.body);
+  const { userName } = req.body;
 
   try {
-    await newUser.save();
-    res.status(200).json({ newUser });
+    const oldUser = await UserModel.findOne({ userName });
+    if (oldUser) {
+      return res
+        .status(400)
+        .json({ message: "User Name is already registered" });
+    }
+    const user = await newUser.save();
+
+    const token = jwt.sign(
+      {
+        userName: user.userName,
+        id: user._id,
+      },
+      process.env.JWT_KEY,
+      { expiresIn: "1h" }
+    );
+
+    res.status(200).json({ user, token });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -36,11 +42,20 @@ export const LoginUser = async (req, res) => {
 
     if (user) {
       const validity = await bcrypt.compare(password, user.password);
-      validity
-        ? res.status(200).json(user)
-        : res.status(400).json("Wrong password");
-    }
-    else {
+      if (!validity) {
+        res.ststus(400).json({ message: "Invalid Password" });
+      } else {
+        const token = jwt.sign(
+          {
+            userName: user.userName,
+            id: user._id,
+          },
+          process.env.JWT_KEY,
+          { expiresIn: "1h" }
+        );
+        res.status(200).json({ user, token });
+      }
+    } else {
       res.status(404).json("User does not exist");
     }
   } catch (error) {
